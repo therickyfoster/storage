@@ -1,0 +1,787 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>PRA Multi-Mirror — Gamified HUD (IndexedDB + Parallax)</title>
+<meta name="description" content="Cinematic multi-mirror submission HUD with IndexedDB, starfield, parallax portals, XP leveling, and offline-friendly UI." />
+<style>
+  /* =========================
+     THEME & RESET
+  ========================== */
+  :root{
+    --bg:#070b11;
+    --bg-2:#0b1120;
+    --card:#0e1624;
+    --hud:#0b1322;
+    --muted:#9fb3c8;
+    --text:#eaf4ff;
+    --accent:#7ce7ff;
+    --accent-2:#a9ffea;
+    --ok:#7affb2;
+    --warn:#ffd06a;
+    --bad:#ff7a7a;
+    --border:#1b2a3b;
+    --glow: 0 0 20px #6bd6ff55, 0 0 40px #6bd6ff33;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    margin:0;
+    color:var(--text);
+    background: radial-gradient(1000px 600px at 10% -10%, #0d1a2a 0%, var(--bg) 40%) fixed,
+                linear-gradient(var(--bg), var(--bg-2)) fixed;
+    font-family: Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, "Helvetica Neue", Arial, Noto Sans, "Apple Color Emoji","Segoe UI Emoji";
+    overflow-x:hidden;
+  }
+
+  /* =========================
+     BACKDROP LAYERS
+  ========================== */
+  #starfield, #nebula, #dust {
+    position: fixed; inset:0; z-index:-3; display:block;
+  }
+  #nebula{ z-index:-2; filter: blur(12px) saturate(120%) contrast(105%); opacity:.35; }
+  #dust{ z-index:-1; pointer-events:none; mix-blend-mode:screen; opacity:.25; }
+
+  /* =========================
+     TOP HUD
+  ========================== */
+  header.hud{
+    position:sticky; top:0; z-index:50;
+    padding:14px 16px; backdrop-filter: blur(10px);
+    background: linear-gradient(180deg, #0b1322cc, #0b132299);
+    border-bottom:1px solid var(--border);
+  }
+  .hud-row{
+    max-width:1200px; margin:0 auto;
+    display:grid; gap:12px; grid-template-columns: 1fr auto;
+    align-items:center;
+  }
+  .brand{
+    display:flex; gap:12px; align-items:center;
+  }
+  .glyph{
+    width:36px; height:36px; border-radius:50%;
+    background: radial-gradient(circle at 30% 30%, var(--accent), transparent 60%),
+                radial-gradient(circle at 70% 70%, var(--accent-2), transparent 70%),
+                #0a1a28;
+    box-shadow: var(--glow), inset 0 0 30px #73ffd644;
+    border:1px solid #18405e;
+  }
+  h1{margin:0; font-size:18px; letter-spacing:.3px}
+  .sub{color:var(--muted); font-size:12px}
+
+  .hud-right{
+    display:flex; gap:10px; align-items:center;
+  }
+  .xp-wrap{
+    width:min(40vw,340px);
+    background:#0a1422; border:1px solid var(--border); border-radius:999px;
+    padding:8px 10px; position:relative;
+  }
+  .xp-bar{
+    height:10px; background:linear-gradient(90deg, #3be2ff, #a6ffe7);
+    border-radius:999px; width:0%;
+    box-shadow:0 0 10px #7deaff55, 0 0 24px #a6ffe755;
+    transition:width .7s ease;
+  }
+  .xp-label{
+    position:absolute; left:10px; right:10px; top:-18px; display:flex; justify-content:space-between;
+    font-size:11px; color:var(--muted);
+  }
+  .hud-btn{
+    display:inline-flex; gap:8px; align-items:center;
+    padding:10px 12px; border-radius:12px; cursor:pointer;
+    border:1px solid #1a2f47; background:linear-gradient(180deg, #0f2239, #0c192a);
+    color:var(--text);
+  }
+  .hud-btn:hover{ box-shadow: var(--glow); transform: translateY(-1px); }
+  .hud-btn.warn{ background:linear-gradient(180deg, #3a2d10, #251d0a); border-color:#5b4820 }
+  .hud-btn.bad{ background:linear-gradient(180deg, #3a1016, #220a0c); border-color:#5a1a25 }
+
+  /* =========================
+     MAIN LAYOUT
+  ========================== */
+  main{ max-width:1200px; margin:0 auto; padding:24px 16px 100px; }
+  .filters{ display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px; }
+  .pill{ padding:8px 12px; border:1px solid var(--border); border-radius:999px; background:#0a1524; cursor:pointer; font-size:13px }
+  .pill.active{ outline:2px solid #1b3a56 }
+
+  .controls{
+    margin:18px 0 26px; display:grid; gap:12px;
+    grid-template-columns:1fr; align-items:start;
+  }
+  @media (min-width:980px){
+    .controls{ grid-template-columns: 1fr auto auto auto auto; }
+  }
+
+  fieldset{
+    border:1px solid var(--border); background:linear-gradient(180deg, #0b1220ee, #0a111dcc);
+    border-radius:14px; padding:12px; position:relative; overflow:hidden;
+  }
+  legend{ padding:0 8px; color:var(--muted); font-size:12px }
+  label{ display:block; font-size:12px; color:var(--muted); margin:2px 0 6px }
+  input,select,textarea,button{
+    width:100%; background:#0a1422; border:1px solid var(--border); color:var(--text);
+    padding:10px 12px; border-radius:10px; font-size:14px;
+  }
+  textarea{ min-height:72px; resize:vertical }
+  .row{ display:grid; gap:10px; }
+  @media (min-width:980px){ .row{ grid-template-columns: 1.2fr .9fr .9fr 1fr } }
+  .stack{ display:flex; gap:8px; flex-wrap:wrap }
+
+  /* =========================
+     PORTAL GRID (TASKS)
+  ========================== */
+  .grid{ display:grid; gap:14px; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
+  .portal{
+    position:relative; border:1px solid var(--border); border-radius:16px;
+    background:
+      radial-gradient(120px 90px at 20% 15%, #1c2a40aa, transparent 60%),
+      radial-gradient(200px 120px at 80% 85%, #12263b99, transparent 60%),
+      var(--card);
+    padding:12px; overflow:hidden; transform-style:preserve-3d;
+    transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease;
+  }
+  .portal:hover{ transform: translateY(-2px) rotateX(3deg) rotateY(-3deg); box-shadow:0 12px 30px #0008, var(--glow); border-color:#28537a; }
+  .portal:before, .portal:after{
+    content:""; position:absolute; inset:-50%; border-radius:50%;
+    background: conic-gradient(from var(--spin,0deg), #63d9ff66, #a0ffe955, transparent 35% 100%);
+    animation: ring 12s linear infinite;
+    filter: blur(22px); opacity:.15; pointer-events:none; transform: translateZ(-40px);
+  }
+  .portal:after{ animation-duration: 18s; opacity:.10 }
+  @keyframes ring{ to{ --spin:360deg } }
+
+  .top{
+    display:grid; grid-template-columns:auto 1fr auto; gap:10px; align-items:center;
+  }
+  .toggle{ transform: translateZ(10px) }
+  .name{ font-weight:800; letter-spacing:.2px }
+  .strike{ text-decoration: line-through; opacity:.65 }
+  .meta{ display:flex; gap:8px; flex-wrap:wrap; margin:6px 0 2px; font-size:12px; color:var(--muted) }
+  .badge{ font-size:12px; color:var(--muted); padding:2px 8px; border:1px solid var(--border); border-radius:999px; background:#0a1422 }
+  .cat{ color:var(--accent) }
+  .muted{ color:var(--muted) }
+  .links{ margin:10px 0; display:flex; flex-wrap:wrap; gap:8px; }
+  .links a{ color:var(--accent); text-decoration:none; border-bottom:1px dashed #2d4c63 }
+  .actions{ display:flex; gap:8px; flex-wrap:wrap; margin-top:8px }
+  .btn{ display:inline-flex; align-items:center; gap:8px; padding:10px 12px; border-radius:10px; border:1px solid var(--border); background:#0d1a2a; cursor:pointer }
+  .btn:hover{ box-shadow: var(--glow); transform: translateY(-1px) }
+  .btn.bad{ background:#2a0d15; border-color:#4c1b25 }
+  .btn.warn{ background:#2a230d; border-color:#4c3c1b }
+
+  /* =========================
+     FLOATING PORTAL HUD
+  ========================== */
+  .hud-float{
+    position:fixed; right:16px; bottom:16px; z-index:40;
+    display:grid; gap:10px; justify-items:end;
+  }
+  .chip{
+    background:linear-gradient(180deg,#0f2840,#0e2033);
+    border:1px solid #14314d; color:var(--text); padding:10px 12px; border-radius:14px;
+    box-shadow: var(--glow);
+  }
+  .chip .k{ color:var(--muted); font-size:12px }
+  .chip strong{ letter-spacing:.2px }
+  .pulse{ animation: pulse 2.2s ease-in-out infinite }
+  @keyframes pulse{
+    0%,100%{ box-shadow:0 0 0 0 #74f0ff55 }
+    50%{ box-shadow:0 0 0 12px #74f0ff00 }
+  }
+
+  /* =========================
+     ACCESSIBILITY & REDUCED MOTION
+  ========================== */
+  @media (prefers-reduced-motion: reduce){
+    .portal, .portal:before, .portal:after, .hud-btn, .btn, .xp-bar{ transition:none; animation:none }
+    #nebula, #dust{ opacity:.12 }
+  }
+</style>
+</head>
+<body>
+  <!-- Cinematic backdrop -->
+  <canvas id="starfield" aria-hidden="true"></canvas>
+  <canvas id="nebula" aria-hidden="true"></canvas>
+  <canvas id="dust" aria-hidden="true"></canvas>
+
+  <!-- Top HUD -->
+  <header class="hud">
+    <div class="hud-row">
+      <div class="brand">
+        <div class="glyph" aria-hidden="true"></div>
+        <div>
+          <h1>Planetary Restoration Archive — Multi-Mirror HUD</h1>
+          <div class="sub">Gamified distribution checklist with IndexedDB, parallax portals, and reward FX 🛰️</div>
+        </div>
+      </div>
+
+      <div class="hud-right">
+        <div class="xp-wrap" aria-label="XP progress">
+          <div class="xp-label"><span id="levelLabel">Lv. 1</span><span id="xpText">0 / 100 XP</span></div>
+          <div class="xp-bar" id="xpBar"></div>
+        </div>
+        <button class="hud-btn" id="seedBtnTop">Seed Targets</button>
+        <button class="hud-btn warn" id="exportBtnTop" title="Download JSON">Export</button>
+        <button class="hud-btn bad" id="wipeBtnTop" title="Erase local DB">Wipe</button>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <!-- Filters -->
+    <div class="filters" id="filters"></div>
+
+    <!-- Creator controls -->
+    <section class="controls">
+      <fieldset>
+        <legend>New Portal Task</legend>
+        <div class="row">
+          <div>
+            <label>Name</label>
+            <input id="name" placeholder="Pin on IPFS via Crust Network" />
+          </div>
+          <div>
+            <label>Category</label>
+            <select id="category">
+              <option>Decentralized / Blockchain-Anchored</option>
+              <option>Traditional Archives</option>
+              <option>Peer-to-Peer</option>
+              <option>Federated / Mirrored Repos</option>
+              <option>Long-term Off-Grid</option>
+              <option>Other</option>
+            </select>
+          </div>
+          <div>
+            <label>Status</label>
+            <select id="status">
+              <option value="todo">To-Do</option>
+              <option value="inprogress">In Progress</option>
+              <option value="done">Done</option>
+              <option value="blocked">Blocked</option>
+            </select>
+          </div>
+          <div>
+            <label>Priority</label>
+            <select id="priority">
+              <option value="P1">P1 (Highest)</option>
+              <option value="P2">P2</option>
+              <option value="P3" selected>P3</option>
+              <option value="P4">P4</option>
+            </select>
+          </div>
+        </div>
+        <label>Links (comma-separated)</label>
+        <input id="links" placeholder="https://..., ipfs://CID, magnet:?xt=urn:btih:..." />
+        <label>Checksum / Proof (optional)</label>
+        <input id="checksum" placeholder="SHA-256, Arweave TX, IPFS CID, etc." />
+        <label>Notes</label>
+        <textarea id="notes" placeholder="Special steps, gateways, providers, retrieval hints."></textarea>
+        <div class="stack" style="margin-top:8px;">
+          <button class="hud-btn" id="addBtn">Add Task</button>
+          <button class="hud-btn" id="clearForm">Clear</button>
+        </div>
+      </fieldset>
+
+      <!-- Quick ops -->
+      <div class="stack" style="justify-self:end">
+        <button class="hud-btn" id="exportBtn">Export</button>
+        <label for="importFile" class="hud-btn">Import</label>
+        <input id="importFile" type="file" accept="application/json" style="position:absolute;left:-9999px;" />
+        <button class="hud-btn warn" id="seedBtn" title="Load default PRA mirrors">Seed Targets</button>
+        <button class="hud-btn bad" id="wipeBtn" title="Erase local DB">Wipe</button>
+      </div>
+    </section>
+
+    <!-- Portal grid -->
+    <section id="list" class="grid" aria-live="polite"></section>
+
+    <!-- Footer stats -->
+    <div class="sub" style="margin-top:16px; display:flex; gap:10px; flex-wrap:wrap;">
+      <span><strong>Stats:</strong> <span id="stats"></span></span>
+      <span>•</span>
+      <span>Keys: [E] Export • [I] Import • [S] Seed • [/ ] Search</span>
+      <span>•</span>
+      <span id="stamp"></span>
+    </div>
+  </main>
+
+  <!-- Floating HUD readouts -->
+  <div class="hud-float">
+    <div class="chip pulse"><span class="k">Objective:</span> <strong>Mirror the Archive everywhere 🚀</strong></div>
+    <div class="chip"><span class="k">Portal Tip:</span> Hover & move mouse for depth — mark tasks “Done” to earn XP ✨</div>
+  </div>
+
+<script>
+/* ===========================================================
+   IndexedDB + Data Model + HUD Gamification
+=========================================================== */
+const DB_NAME="pra_mirror_hud";
+const DB_VER=1;
+const STORE="tasks";
+let db;
+
+const listEl = document.getElementById("list");
+const filtersEl = document.getElementById("filters");
+const statsEl = document.getElementById("stats");
+const stampEl = document.getElementById("stamp");
+const xpBar = document.getElementById("xpBar");
+const xpText = document.getElementById("xpText");
+const levelLabel = document.getElementById("levelLabel");
+
+// XP model
+let xp=0, level=1;
+function xpForLevel(l){ return 100 + (l-1)*50; }
+function grantXP(amount=8){
+  xp += amount;
+  while(xp >= xpForLevel(level)){ xp -= xpForLevel(level); level++; flashLevelUp(); }
+  renderXP();
+}
+function renderXP(){
+  const cap = xpForLevel(level);
+  const pct = Math.max(0, Math.min(100, Math.round((xp/cap)*100)));
+  xpBar.style.width = pct + "%";
+  xpText.textContent = `${xp} / ${cap} XP`;
+  levelLabel.textContent = `Lv. ${level}`;
+}
+function flashLevelUp(){
+  const h = document.querySelector('header.hud');
+  h.style.boxShadow="0 0 0 0 #7cf8ff";
+  h.animate([{boxShadow:'0 0 0 0 #7cf8ff'},{boxShadow:'0 0 0 24px #7cf8ff00'}],{duration:900,easing:'ease-out'});
+  spawnConfetti(window.innerWidth-80, 80, 90);
+}
+
+function openDB(){
+  return new Promise((resolve,reject)=>{
+    const req = indexedDB.open(DB_NAME, DB_VER);
+    req.onupgradeneeded = e=>{
+      const db = e.target.result;
+      if(!db.objectStoreNames.contains(STORE)){
+        const os = db.createObjectStore(STORE, { keyPath:'id', autoIncrement:true });
+        os.createIndex('by_status','status',{unique:false});
+        os.createIndex('by_category','category',{unique:false});
+        os.createIndex('by_priority','priority',{unique:false});
+        os.createIndex('by_name','name',{unique:false});
+      }
+    };
+    req.onsuccess=()=>resolve(req.result);
+    req.onerror =()=>reject(req.error);
+  });
+}
+function store(mode="readonly"){ return db.transaction(STORE,mode).objectStore(STORE); }
+function addTask(t){ return new Promise((res,rej)=>{ const r=store("readwrite").add(t); r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error); }); }
+function putTask(t){ return new Promise((res,rej)=>{ const r=store("readwrite").put(t); r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error); }); }
+function delTask(id){ return new Promise((res,rej)=>{ const r=store("readwrite").delete(id); r.onsuccess=()=>res(); r.onerror=()=>rej(r.error); }); }
+function allTasks(){
+  return new Promise((res,rej)=>{
+    const out=[]; const r=store().openCursor();
+    r.onsuccess=e=>{ const c=e.target.result; if(c){ out.push(c.value); c.continue(); } else res(out); };
+    r.onerror=()=>rej(r.error);
+  });
+}
+
+let filter = { status:"ALL", category:"ALL", q:"" };
+function pill(label, active){ return `<button class="pill ${active?'active':''}" data-pill="${label}">${label}</button>`; }
+function escapeHTML(s){ return String(s).replace(/[&<>"']/g, m=>({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[m])); }
+function short(s){ return s.length>16 ? s.slice(0,8)+"…"+s.slice(-6) : s; }
+function badgeForStatus(s){
+  if(s==="done") return `<span class="badge" style="color:var(--ok)">done</span>`;
+  if(s==="blocked") return `<span class="badge" style="color:var(--bad)">blocked</span>`;
+  if(s==="inprogress") return `<span class="badge" style="color:var(--warn)">in&nbsp;progress</span>`;
+  return `<span class="badge">to-do</span>`;
+}
+
+async function render(){
+  const tasks = await allTasks();
+
+  // Filters with search
+  const cats = ["ALL", ...Array.from(new Set(tasks.map(t=>t.category)))];
+  const statuses=["ALL","todo","inprogress","done","blocked"];
+  const qbox = `<input id="search" placeholder="Search…" value="${filter.q||''}" style="max-width:220px">`;
+  filtersEl.innerHTML = [
+    ...statuses.map(s=>pill(`status:${s}`, filter.status===s)),
+    ...cats.map(c=>pill(`cat:${c}`, filter.category===c)),
+    qbox,
+    `<button class="pill" id="clearFilters">Clear</button>`
+  ].join("");
+
+  // Apply filters
+  const q = (filter.q||"").toLowerCase().trim();
+  let view = tasks.filter(t=>{
+    const okS = filter.status==="ALL" || t.status===filter.status;
+    const okC = filter.category==="ALL" || t.category===filter.category;
+    const hit = !q || (t.name?.toLowerCase().includes(q) || t.notes?.toLowerCase().includes(q) || (t.links||[]).join(",").toLowerCase().includes(q) || (t.checksum||"").toLowerCase().includes(q));
+    return okS && okC && hit;
+  });
+
+  // Sort by priority, then status, then updated desc
+  const prOrder={P1:1,P2:2,P3:3,P4:4};
+  view.sort((a,b)=>{
+    const pa=prOrder[a.priority]??9, pb=prOrder[b.priority]??9;
+    if(pa!==pb) return pa-pb;
+    if(a.status!==b.status) return a.status.localeCompare(b.status);
+    return (b.updated||0)-(a.updated||0);
+  });
+
+  // Render portal cards
+  listEl.innerHTML = view.map(t=>{
+    const links = (t.links||[]).filter(Boolean).map(url=>{
+      const u=String(url).trim(); const d=u.length>64?u.slice(0,61)+"…":u;
+      return `<a href="${u}" target="_blank" rel="noopener">${d}</a>`;
+    }).join(" • ");
+    return `
+      <article class="portal" data-id="${t.id}" data-pr="${t.priority}">
+        <div class="top">
+          <input type="checkbox" class="toggle" ${t.status==="done"?"checked":""} aria-label="toggle done">
+          <div>
+            <div class="name ${t.status==='done'?'strike':''}">${escapeHTML(t.name||'Untitled Task')}</div>
+            <div class="meta">
+              <span class="badge cat">${escapeHTML(t.category||'Other')}</span>
+              ${badgeForStatus(t.status)}
+              <span class="badge">priority ${escapeHTML(t.priority||'P3')}</span>
+              ${t.checksum?`<span class="badge">proof: ${escapeHTML(short(t.checksum))}</span>`:''}
+            </div>
+          </div>
+          <div class="muted">${t.updated?new Date(t.updated).toLocaleString():new Date(t.created).toLocaleString()}</div>
+        </div>
+        ${links?`<div class="links">${links}</div>`:''}
+        ${t.notes?`<div class="muted" style="white-space:pre-wrap">${escapeHTML(t.notes)}</div>`:''}
+        <div class="actions">
+          <button class="btn" data-act="edit">Edit</button>
+          <button class="btn warn" data-act="bump">Bump</button>
+          <button class="btn" data-act="clone">Clone</button>
+          <button class="btn bad" data-act="delete">Delete</button>
+        </div>
+      </article>
+    `;
+  }).join("");
+
+  // Stats
+  const total=tasks.length, done=tasks.filter(t=>t.status==="done").length, inprog=tasks.filter(t=>t.status==="inprogress").length, blocked=tasks.filter(t=>t.status==="blocked").length;
+  statsEl.textContent = `${done}/${total} done • ${inprog} in-progress • ${blocked} blocked`;
+  stampEl.textContent = `Saved locally (${new Date().toLocaleTimeString()})`;
+
+  // Parallax tilt per portal
+  attachCardParallax();
+}
+
+function sanitizeTask(t){
+  return {
+    name: String(t.name||"").slice(0,300),
+    category: String(t.category||"Other").slice(0,120),
+    status: ["todo","inprogress","done","blocked"].includes(t.status)?t.status:"todo",
+    priority:["P1","P2","P3","P4"].includes(t.priority)?t.priority:"P3",
+    links: Array.isArray(t.links)? t.links.map(x=>String(x)).slice(0,12) : [],
+    checksum: String(t.checksum||"").slice(0,256),
+    notes: String(t.notes||"").slice(0,5000),
+    created: Number(t.created||Date.now()),
+    updated: Number(t.updated||Date.now()),
+    id: t.id
+  };
+}
+
+// Seed set (same as before, polished)
+const SEED = [
+  ["IPFS (pin, multi-gateway)","Decentralized / Blockchain-Anchored","todo","P1",["ipfs://<CID>","https://ipfs.io/ipfs/<CID>","https://dweb.link/ipfs/<CID>"],"Primary content-addressed mirror. Pin across gateways; consider Crust staking.","<CID>"],
+  ["Arweave (TX + ArDrive)","Decentralized / Blockchain-Anchored","todo","P1",["https://arweave.net/<TX>","ardrive://<DriveId>"],"Permanent ledger; bundle via ArDrive; record TX ids in manifest.","<TX>"],
+  ["Filecoin (deals)","Decentralized / Blockchain-Anchored","todo","P2",[], "Create storage deals; include retrieval providers list.",""],
+  ["Crust Network (IPFS compatible)","Decentralized / Blockchain-Anchored","todo","P2",[], "Stake for replicated pinning of CIDs.",""],
+  ["Sia / Skynet","Decentralized / Blockchain-Anchored","todo","P3",[], "Decentralized object storage; record skylinks.",""],
+  ["Storj","Decentralized / Blockchain-Anchored","todo","P3",[], "Decentralized cloud for big binaries.",""],
+  ["Internet Archive (Wayback)","Traditional Archives","todo","P1",["https://web.archive.org/save/planetaryrestorationarchive.com"],"Submit canonical URLs; include checksums page.",""],
+  ["Zenodo (DOI)","Traditional Archives","todo","P2",[], "Freeze snapshot; mint DOI.",""],
+  ["Figshare","Traditional Archives","todo","P3",[], "Dataset mirror; README + checksums.",""],
+  ["OSF (Open Science Framework)","Traditional Archives","todo","P3",[], "Bundle metadata and contributors.",""],
+  ["Archive.today / Ghostarchive","Traditional Archives","todo","P4",[], "Freeze landing pages for proof-of-presence.",""],
+  ["BitTorrent (DHT + web seeds)","Peer-to-Peer","todo","P1",["magnet:?xt=urn:btih:<HASH>"],"Publish magnet; add web seeds to IPFS gateways + Releases.","<HASH>"],
+  ["I2P (eepsite / torrents)","Peer-to-Peer","todo","P2",[], "Private P2P eepsite with mirrors & magnets.",""],
+  ["Freenet / Retroshare","Peer-to-Peer","todo","P4",[], "Privacy redundancy among trusted peers.",""],
+  ["GitHub (source + releases)","Federated / Mirrored Repos","todo","P1",["https://github.com/TheRickyFoster"],"Primary code mirror; Releases with .zip + checksums.",""],
+  ["GitLab mirror","Federated / Mirrored Repos","todo","P2",[], "Push mirror; enable LFS.",""],
+  ["Codeberg mirror","Federated / Mirrored Repos","todo","P2",[], "Lightweight mirror; durability.",""],
+  ["SourceHut / NotABug","Federated / Mirrored Repos","todo","P3",[], "Additional git redundancy.",""],
+  ["Radicle (p2p git)","Federated / Mirrored Repos","todo","P3",[], "Decentralized git; publish rad: URNs.",""],
+  ["M-DISC / Cold storage","Long-term Off-Grid","todo","P2",[], "Burn snapshot + manifest; multi-geo vaults.",""],
+  ["Sneakernet seed nodes (Raspberry Pi)","Long-term Off-Grid","todo","P2",[], "Run IPFS + torrent seeding in libraries/maker spaces.",""],
+  ["Mega.nz (file mirror)","Other","todo","P3",[], "High-bandwidth downloads; publish hash list.",""],
+].map(([name,category,status,priority,links,notes,checksum])=>({name,category,status,priority,links,notes,checksum,created:Date.now(),updated:Date.now()}));
+
+/* ===========================================================
+   UI EVENTS
+=========================================================== */
+document.addEventListener("click", async (e)=>{
+  // Filter pills
+  const pill = e.target.closest("[data-pill]");
+  if(pill){
+    const tag = pill.getAttribute("data-pill");
+    if(tag.startsWith("status:")) filter.status = tag.split(":")[1];
+    if(tag.startsWith("cat:")) filter.category = tag.split(":")[1];
+    await render(); return;
+  }
+  if(e.target.id==="clearFilters"){ filter={status:"ALL",category:"ALL",q:""}; await render(); return; }
+
+  // Cards
+  const card = e.target.closest(".portal");
+  if(card){
+    const id = Number(card.getAttribute("data-id"));
+    if(e.target.matches(".toggle")){
+      const [t] = (await allTasks()).filter(x=>x.id===id);
+      if(t){
+        const wasDone = t.status==="done";
+        t.status = e.target.checked ? "done" : "todo";
+        t.updated = Date.now();
+        await putTask(t);
+        if(!wasDone && t.status==="done"){ celebrate(card); grantXP(12); }
+        await render();
+      }
+      return;
+    }
+    const act = e.target.getAttribute("data-act");
+    if(act==="delete"){ await delTask(id); await render(); return; }
+    if(act==="bump"){ const [t]=(await allTasks()).filter(x=>x.id===id); if(t){ t.updated=Date.now(); await putTask(t); bounce(card); await render(); } return; }
+    if(act==="clone"){ const [t]=(await allTasks()).filter(x=>x.id===id); if(t){ const copy={...t}; delete copy.id; copy.name+=" (copy)"; copy.created=Date.now(); copy.updated=Date.now(); await addTask(copy); shimmer(card); await render(); } return; }
+    if(act==="edit"){
+      const [t]=(await allTasks()).filter(x=>x.id===id); if(!t) return;
+      const name = prompt("Name:", t.name??""); if(name===null) return;
+      const category = prompt("Category:", t.category??""); if(category===null) return;
+      const status = prompt("Status (todo|inprogress|done|blocked):", t.status??"todo"); if(status===null) return;
+      const priority = prompt("Priority (P1..P4):", t.priority??"P3"); if(priority===null) return;
+      const links = prompt("Links (comma-separated):", (t.links||[]).join(", ")); if(links===null) return;
+      const checksum = prompt("Checksum/Proof:", t.checksum??""); if(checksum===null) return;
+      const notes = prompt("Notes:", t.notes??""); if(notes===null) return;
+
+      Object.assign(t,{
+        name:name.trim(), category:category.trim(), status:status.trim(), priority:priority.trim(),
+        links:links.split(",").map(s=>s.trim()).filter(Boolean), checksum:checksum.trim(), notes,
+        updated:Date.now()
+      });
+      await putTask(t);
+      shimmer(card);
+      await render();
+      return;
+    }
+  }
+
+  // Header/top buttons
+  if(e.target.id==="exportBtn" || e.target.id==="exportBtnTop"){ doExport(); return; }
+  if(e.target.id==="seedBtn" || e.target.id==="seedBtnTop"){ await seedDefaults(); return; }
+  if(e.target.id==="wipeBtn" || e.target.id==="wipeBtnTop"){
+    if(confirm("Erase all tasks stored locally? This cannot be undone.")){
+      const req = indexedDB.deleteDatabase(DB_NAME);
+      req.onsuccess = ()=> location.reload();
+      req.onerror = ()=> alert("Failed to wipe database.");
+    }
+    return;
+  }
+});
+
+document.addEventListener("input", async (e)=>{
+  if(e.target.id==="search"){ filter.q = e.target.value; await render(); }
+});
+
+document.addEventListener("keydown",(e)=>{
+  if(e.key==="e"){ e.preventDefault(); doExport(); }
+  if(e.key==="i"){ e.preventDefault(); document.getElementById("importFile").click(); }
+  if(e.key==="/"){ e.preventDefault(); const s=document.getElementById("search"); s?.focus(); s?.select(); }
+  if(e.key==="s"){ e.preventDefault(); seedDefaults(); }
+});
+
+document.getElementById("importFile").addEventListener("change", async (e)=>{
+  const f = e.target.files?.[0]; if(!f) return;
+  const txt = await f.text();
+  try{
+    const data = JSON.parse(txt); if(!Array.isArray(data)) throw new Error("Invalid JSON array.");
+    for(const t of data){ const c=sanitizeTask(t); if(c.id) delete c.id; c.created=c.created||Date.now(); c.updated=Date.now(); await addTask(c); }
+    await render(); spawnConfetti(window.innerWidth*0.6, window.innerHeight*0.2, 80);
+  }catch(err){ alert("Import failed: " + err.message); }
+  finally{ e.target.value=""; }
+});
+
+// Form helpers
+function readForm(){
+  const name = document.getElementById("name").value.trim();
+  const category = document.getElementById("category").value;
+  const status = document.getElementById("status").value;
+  const priority = document.getElementById("priority").value;
+  const links = document.getElementById("links").value.split(",").map(s=>s.trim()).filter(Boolean);
+  const checksum = document.getElementById("checksum").value.trim();
+  const notes = document.getElementById("notes").value;
+  return { name, category, status, priority, links, checksum, notes };
+}
+document.getElementById("addBtn").addEventListener("click", async ()=>{
+  const t = readForm();
+  if(!t.name){ alert("Please provide a name."); return; }
+  t.created=Date.now(); t.updated=Date.now();
+  await addTask(t); clearFormFields(); await render(); grantXP(6);
+});
+document.getElementById("clearForm").addEventListener("click", clearFormFields);
+function clearFormFields(){
+  for(const id of ["name","links","checksum","notes"]) document.getElementById(id).value="";
+  document.getElementById("category").value="Decentralized / Blockchain-Anchored";
+  document.getElementById("status").value="todo";
+  document.getElementById("priority").value="P3";
+}
+
+async function seedDefaults(){
+  const exists = await allTasks();
+  if(exists.length && !confirm("Append default PRA targets to your current list?")) return;
+  for(const t of SEED){ await addTask(t); }
+  await render();
+  spawnConfetti(window.innerWidth*0.5, window.innerHeight*0.3, 120);
+}
+
+function doExport(){
+  allTasks().then(tasks=>{
+   const blob = new Blob([JSON.stringify(tasks,null,2)],{type:"application/json"});
+   const a=document.createElement("a");
+   a.href=URL.createObjectURL(blob);
+   a.download=`pra_mirror_tasks_${new Date().toISOString().replace(/[:.]/g,'-')}.json`;
+   a.click(); URL.revokeObjectURL(a.href);
+  });
+}
+
+/* ===========================================================
+   Motion Graphics: Starfield + Nebula + Dust + FX
+=========================================================== */
+const canvas = document.getElementById("starfield");
+const neb = document.getElementById("nebula");
+const dust = document.getElementById("dust");
+const ctx = canvas.getContext("2d");
+const n2 = neb.getContext("2d");
+const d2 = dust.getContext("2d");
+let stars=[], w=0, h=0, tiltX=0, tiltY=0, t0=performance.now();
+
+function resize(){
+  w = canvas.width = neb.width = dust.width = window.innerWidth;
+  h = canvas.height = neb.height = dust.height = window.innerHeight;
+  spawnStars();
+  drawNebula();
+  drawDust();
+}
+window.addEventListener("resize", resize);
+
+function spawnStars(){
+  const count = Math.round((w*h)/9000);
+  stars = new Array(count).fill(0).map(()=>({
+    x: Math.random()*w, y: Math.random()*h, z: Math.random()*0.8+0.2,
+    s: Math.random()*1.3+0.2, tw: Math.random()*6.28
+  }));
+}
+function drawStarfield(t){
+  ctx.clearRect(0,0,w,h);
+  ctx.save();
+  ctx.fillStyle="#ffffff";
+  for(const s of stars){
+    const twinkle = (Math.sin(t/700 + s.tw)*0.25+0.75);
+    const px = s.x + tiltX*s.z*20, py = s.y + tiltY*s.z*20;
+    ctx.globalAlpha = 0.6*s.z*twinkle;
+    ctx.fillRect(px, py, s.s, s.s);
+  }
+  ctx.restore();
+}
+function drawNebula(){
+  n2.clearRect(0,0,w,h);
+  const grad = n2.createRadialGradient(w*0.2,h*0.2,40, w*0.5,h*0.5, Math.max(w,h)*0.8);
+  grad.addColorStop(0, "#1a5fb455");
+  grad.addColorStop(0.35, "#6bd6ff33");
+  grad.addColorStop(0.75, "#8bffd733");
+  grad.addColorStop(1, "transparent");
+  n2.fillStyle = grad; n2.fillRect(0,0,w,h);
+}
+function drawDust(){
+  d2.clearRect(0,0,w,h);
+  for(let i=0;i<60;i++){
+    const x = Math.random()*w, y=Math.random()*h;
+    const r = Math.random()*2+0.5;
+    d2.fillStyle = "rgba(160,255,220,0.15)";
+    d2.beginPath(); d2.arc(x,y,r,0,Math.PI*2); d2.fill();
+  }
+}
+// Parallax tilt from cursor & scroll
+window.addEventListener("mousemove", (e)=>{
+  const nx = (e.clientX/w)*2 - 1;
+  const ny = (e.clientY/h)*2 - 1;
+  tiltX = nx; tiltY = ny;
+});
+window.addEventListener("scroll", ()=>{
+  // tiny z-warp with scroll
+  tiltY += (window.scrollY / (document.body.scrollHeight || 1)) * 0.0005;
+});
+
+// Render loop
+function frame(now){
+  drawStarfield(now);
+  requestAnimationFrame(frame);
+}
+resize(); requestAnimationFrame(frame);
+
+/* ===========================================================
+   Portal Interactions & FX
+=========================================================== */
+function attachCardParallax(){
+  const cards = document.querySelectorAll(".portal");
+  cards.forEach(card=>{
+    card.addEventListener("mousemove", (e)=>{
+      const r = card.getBoundingClientRect();
+      const x = (e.clientX - r.left)/r.width, y = (e.clientY - r.top)/r.height;
+      const rx = (y-0.5)*6, ry = (x-0.5)*-6;
+      card.style.transform = `translateY(-2px) rotateX(${rx}deg) rotateY(${ry}deg)`;
+    });
+    card.addEventListener("mouseleave", ()=>{ card.style.transform=""; });
+  });
+}
+
+function celebrate(el){
+  shimmer(el); // gradient shimmer
+  const r = el.getBoundingClientRect();
+  spawnConfetti(r.left + r.width/2, r.top + window.scrollY, 60);
+}
+function shimmer(el){
+  el.animate([{filter:'brightness(1)'},{filter:'brightness(1.6)'},{filter:'brightness(1)'}],{duration:500});
+}
+function bounce(el){
+  el.animate([{transform:'translateY(0)'},{transform:'translateY(-6px)'},{transform:'translateY(0)'}],{duration:320, easing:'ease-out'});
+}
+
+// Simple canvas confetti
+function spawnConfetti(x,y,count=80){
+  const c = document.createElement('canvas');
+  c.width = window.innerWidth; c.height = window.innerHeight;
+  c.style.cssText = 'position:fixed; inset:0; z-index:60; pointer-events:none';
+  document.body.appendChild(c);
+  const cx = c.getContext('2d');
+  const parts = new Array(count).fill(0).map(()=>({
+    x, y, vx:(Math.random()-0.5)*6, vy:(Math.random()-1.4)*7, r:Math.random()*3+2,
+    a:1, col: `hsl(${Math.random()*360},90%,70%)`
+  }));
+  const start = performance.now();
+  (function anim(t){
+    cx.clearRect(0,0,c.width,c.height);
+    for(const p of parts){
+      p.x+=p.vx; p.y+=p.vy; p.vy+=0.12; p.a-=0.012;
+      cx.globalAlpha=Math.max(0,p.a);
+      cx.fillStyle=p.col; cx.beginPath(); cx.arc(p.x,p.y,p.r,0,6.283); cx.fill();
+    }
+    if(t-start<2000){ requestAnimationFrame(anim); } else { c.remove(); }
+  })(start);
+}
+
+/* ===========================================================
+   INIT
+=========================================================== */
+(async function init(){
+  db = await openDB();
+  // Bind top HUD buttons (already handled via click delegation too)
+  document.getElementById("exportBtnTop").addEventListener("click", doExport);
+  document.getElementById("seedBtnTop").addEventListener("click", seedDefaults);
+  document.getElementById("wipeBtnTop").addEventListener("click", ()=>document.getElementById("wipeBtnTop").click());
+
+  // Seed keyboard hints
+  renderXP();
+  await render();
+})();
+</script>
+</body>
+</html>

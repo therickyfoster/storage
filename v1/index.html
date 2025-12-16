@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>PRA Multi-Mirror — To-Do (IndexedDB)</title>
+  <meta name="description" content="Planetary Restoration Archive multi-mirror submission checklist with IndexedDB persistence." />
+  <style>
+    :root { --bg:#0b0f14; --card:#121820; --muted:#9fb3c8; --text:#e6eef7; --accent:#6ae3ff; --ok:#6af7a0; --warn:#ffd06a; --bad:#ff7a7a; --border:#1f2a36; }
+    * { box-sizing: border-box; }
+    body { margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, "Helvetica Neue", Arial, Noto Sans, "Apple Color Emoji","Segoe UI Emoji"; background: radial-gradient(1200px 600px at 10% -10%, #112033 0%, #0b0f14 40%), linear-gradient(#0b0f14,#0b0f14); color: var(--text); }
+    header { padding: 20px 16px; border-bottom: 1px solid var(--border); position: sticky; top:0; backdrop-filter: blur(6px); background: #0b0f14cc; z-index: 10; }
+    h1 { margin: 0 0 6px; font-weight: 800; font-size: 20px; letter-spacing: .2px; }
+    header .sub { color: var(--muted); font-size: 13px; }
+    main { max-width: 1100px; margin: 0 auto; padding: 18px 16px 64px; }
+
+    .controls { display: grid; gap: 10px; grid-template-columns: 1fr; margin: 16px 0 24px; }
+    .row { display: grid; gap:10px; }
+    @media (min-width:920px){ .controls{ grid-template-columns: 1fr auto auto auto auto; align-items: end; } .row{ grid-template-columns: 1.2fr .9fr .9fr 1fr; } }
+
+    fieldset { border:1px solid var(--border); background: var(--card); border-radius: 12px; padding: 12px; }
+    legend { padding: 0 8px; color: var(--muted); font-size: 12px; }
+    label { display: block; font-size: 12px; color: var(--muted); margin: 2px 0 6px; }
+    input, select, textarea, button { width: 100%; background: #0e1520; border: 1px solid var(--border); color: var(--text); padding: 10px 12px; border-radius: 10px; font-size: 14px; }
+    textarea { min-height: 72px; resize: vertical; }
+    button { cursor: pointer; }
+    .btn { display: inline-flex; align-items: center; gap: 8px; padding: 10px 12px; border-radius: 10px; border:1px solid var(--border); background: #101826; }
+    .btn.primary { background: linear-gradient(180deg, #0f2840, #0e2033); border-color:#14314d; }
+    .btn.good { background: #10301d; border-color:#1e5530; }
+    .btn.warn { background: #3a2d10; border-color:#59471a; }
+    .btn.bad  { background: #3a1010; border-color:#5a1a1a; }
+    .stack { display: flex; gap: 8px; flex-wrap: wrap; }
+    .right { display: flex; gap: 8px; justify-self: end; }
+
+    .grid { display: grid; gap: 12px; }
+    .card { border:1px solid var(--border); background: var(--card); border-radius: 14px; padding: 12px; }
+    .card .top { display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: center; }
+    .badge { font-size: 12px; color: var(--muted); padding: 2px 8px; border:1px solid var(--border); border-radius: 999px; background: #0e1520; }
+    .cat { color: var(--accent); }
+    .name { font-weight: 700; }
+    .muted { color: var(--muted); }
+    .meta { display: flex; gap: 10px; flex-wrap: wrap; margin: 8px 0 6px; font-size: 12px; color: var(--muted); }
+    .actions { display:flex; gap:8px; flex-wrap: wrap; margin-top: 8px; }
+    .strike { text-decoration: line-through; opacity:.65; }
+    .filters { display:flex; gap:8px; flex-wrap: wrap; margin-bottom: 12px; }
+    .pill { padding:6px 10px; border:1px solid var(--border); border-radius:999px; font-size: 13px; cursor:pointer; background:#0e1520; }
+    .pill.active { outline: 2px solid #1b3956; }
+
+    .footer { margin-top: 20px; color: var(--muted); font-size: 12px; display:flex; gap:8px; flex-wrap:wrap; }
+    .kbd { border:1px solid var(--border); padding:2px 6px; border-radius:6px; background:#0e1520; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Planetary Restoration Archive — Multi-Mirror To-Do</h1>
+    <div class="sub">Censorship-resistant distribution checklist with IndexedDB persistence. Export/import your progress safely.</div>
+  </header>
+
+  <main>
+    <!-- Filters & bulk controls -->
+    <div class="filters" id="filters"></div>
+
+    <section class="controls">
+      <fieldset>
+        <legend>New Task</legend>
+        <div class="row">
+          <div>
+            <label>Name</label>
+            <input id="name" placeholder="e.g., Pin on IPFS via Crust Network" />
+          </div>
+          <div>
+            <label>Category</label>
+            <select id="category">
+              <option>Decentralized / Blockchain-Anchored</option>
+              <option>Traditional Archives</option>
+              <option>Peer-to-Peer</option>
+              <option>Federated / Mirrored Repos</option>
+              <option>Long-term Off-Grid</option>
+              <option>Other</option>
+            </select>
+          </div>
+          <div>
+            <label>Status</label>
+            <select id="status">
+              <option value="todo">To-Do</option>
+              <option value="inprogress">In Progress</option>
+              <option value="done">Done</option>
+              <option value="blocked">Blocked</option>
+            </select>
+          </div>
+          <div>
+            <label>Priority</label>
+            <select id="priority">
+              <option value="P1">P1 (Highest)</option>
+              <option value="P2">P2</option>
+              <option value="P3" selected>P3</option>
+              <option value="P4">P4</option>
+            </select>
+          </div>
+        </div>
+        <label>Links (comma-separated)</label>
+        <input id="links" placeholder="https://..., ipfs://CID, magnet:?xt=urn:btih:..." />
+        <label>Checksum / Proof (optional)</label>
+        <input id="checksum" placeholder="SHA-256, Arweave TX, IPFS CID, etc." />
+        <label>Notes</label>
+        <textarea id="notes" placeholder="Any special steps, gateway pinning, API keys (avoid secrets), proof-of-publish info."></textarea>
+        <div class="stack" style="margin-top:8px;">
+          <button class="btn primary" id="addBtn">Add Task</button>
+          <button class="btn" id="clearForm">Clear</button>
+        </div>
+      </fieldset>
+
+      <div class="right stack">
+        <button class="btn" id="exportBtn" title="Download JSON">Export</button>
+        <label for="importFile" class="btn">Import</label>
+        <input id="importFile" type="file" accept="application/json" style="position:absolute;left:-9999px;" />
+        <button class="btn warn" id="seedBtn" title="Load default PRA mirrors">Seed Targets</button>
+        <button class="btn bad" id="wipeBtn" title="Erase local DB">Wipe</button>
+      </div>
+    </section>
+
+    <section id="list" class="grid" aria-live="polite"></section>
+
+    <div class="footer">
+      <span><strong>Stats:</strong> <span id="stats"></span></span>
+      <span>•</span>
+      <span>Keyboard: <span class="kbd">e</span> export, <span class="kbd">i</span> import, <span class="kbd">s</span> seed, <span class="kbd">/</span> focus search</span>
+      <span>•</span>
+      <span id="stamp"></span>
+    </div>
+  </main>
+
+  <script>
+  // --- Minimal IndexedDB helper (no external libs) ---
+  const DB_NAME = "pra_mirror_todo";
+  const DB_VER  = 1;
+  const STORE   = "tasks";
+  let db;
+
+  function openDB(){
+    return new Promise((resolve, reject)=>{
+      const req = indexedDB.open(DB_NAME, DB_VER);
+      req.onupgradeneeded = (e)=>{
+        const db = e.target.result;
+        if(!db.objectStoreNames.contains(STORE)){
+          const os = db.createObjectStore(STORE, { keyPath: "id", autoIncrement: true });
+          os.createIndex("by_status", "status", { unique:false });
+          os.createIndex("by_category", "category", { unique:false });
+          os.createIndex("by_priority", "priority", { unique:false });
+          os.createIndex("by_name", "name", { unique:false });
+        }
+      };
+      req.onsuccess = ()=> resolve(req.result);
+      req.onerror = ()=> reject(req.error);
+    });
+  }
+
+  function tx(store = STORE, mode = "readonly"){
+    return db.transaction(store, mode).objectStore(store);
+  }
+
+  function addTask(task){
+    return new Promise((resolve, reject)=>{
+      const req = tx(STORE, "readwrite").add(task);
+      req.onsuccess = ()=> resolve(req.result);
+      req.onerror = ()=> reject(req.error);
+    });
+  }
+
+  function putTask(task){
+    return new Promise((resolve, reject)=>{
+      const req = tx(STORE, "readwrite").put(task);
+      req.onsuccess = ()=> resolve(req.result);
+      req.onerror = ()=> reject(req.error);
+    });
+  }
+
+  function delTask(id){
+    return new Promise((resolve, reject)=>{
+      const req = tx(STORE, "readwrite").delete(id);
+      req.onsuccess = ()=> resolve();
+      req.onerror = ()=> reject(req.error);
+    });
+  }
+
+  function allTasks(){
+    return new Promise((resolve, reject)=>{
+      const out = [];
+      const req = tx().openCursor();
+      req.onsuccess = (e)=>{
+        const cur = e.target.result;
+        if(cur){ out.push(cur.value); cur.continue(); }
+        else resolve(out);
+      };
+      req.onerror = ()=> reject(req.error);
+    });
+  }
+
+  // --- UI state ---
+  const listEl   = document.getElementById("list");
+  const statsEl  = document.getElementById("stats");
+  const stampEl  = document.getElementById("stamp");
+  const filtersEl= document.getElementById("filters");
+
+  let filter = { status: "ALL", category: "ALL", q: "" };
+
+  function fmtTime(ts){
+    const d = new Date(ts);
+    return d.toLocaleString();
+  }
+
+  function badgeForStatus(s){
+    if(s==="done") return `<span class="badge" style="color:${getComputedStyle(document.documentElement).getPropertyValue('--ok')}">done</span>`;
+    if(s==="blocked") return `<span class="badge" style="color:${getComputedStyle(document.documentElement).getPropertyValue('--bad')}">blocked</span>`;
+    if(s==="inprogress") return `<span class="badge" style="color:${getComputedStyle(document.documentElement).getPropertyValue('--warn')}">in&nbsp;progress</span>`;
+    return `<span class="badge">to-do</span>`;
+  }
+
+  function pill(label, active){ return `<button class="pill ${active?'active':''}" data-pill="${label}">${label}</button>`; }
+
+  async function render(){
+    const tasks = await allTasks();
+    // filters
+    const cats = ["ALL", ...Array.from(new Set(tasks.map(t=>t.category)))];
+    const statuses = ["ALL","todo","inprogress","done","blocked"];
+    const qbox = `<input id="search" placeholder="Search…" value="${filter.q||''}" style="max-width:220px;">`;
+    filtersEl.innerHTML = [
+      ...statuses.map(s=>pill(`status:${s}`, filter.status===s)),
+      ...cats.map(c=>pill(`cat:${c}`, filter.category===c)),
+      qbox,
+      `<button class="pill" id="clearFilters">Clear</button>`
+    ].join("");
+
+    // apply filters
+    const q = (filter.q||"").toLowerCase().trim();
+    let view = tasks.filter(t=>{
+      const okStatus = filter.status==="ALL" || t.status===filter.status;
+      const okCat    = filter.category==="ALL" || t.category===filter.category;
+      const hitsQ    = !q || (t.name?.toLowerCase().includes(q) || t.notes?.toLowerCase().includes(q) || (t.links||[]).join(",").toLowerCase().includes(q) || (t.checksum||"").toLowerCase().includes(q));
+      return okStatus && okCat && hitsQ;
+    });
+
+    // sort: priority asc (P1..P4), then status, then updated desc
+    const prOrder = {P1:1,P2:2,P3:3,P4:4};
+    view.sort((a,b)=>{
+      const pa = prOrder[a.priority]??9, pb = prOrder[b.priority]??9;
+      if(pa!==pb) return pa-pb;
+      if(a.status!==b.status) return a.status.localeCompare(b.status);
+      return (b.updated||0)-(a.updated||0);
+    });
+
+    listEl.innerHTML = view.map(t=>{
+      const links = (t.links||[]).filter(Boolean).map(url=>{
+        const safe = String(url).trim();
+        const disp = safe.length>64 ? safe.slice(0,61)+'…' : safe;
+        return `<a href="${safe}" target="_blank" rel="noopener">${disp}</a>`;
+      }).join(" • ");
+      return `
+      <article class="card" data-id="${t.id}">
+        <div class="top">
+          <input type="checkbox" ${t.status==="done"?"checked":""} aria-label="toggle done" class="toggle">
+          <div>
+            <div class="name ${t.status==='done'?'strike':''}">${escapeHTML(t.name||'Untitled Task')}</div>
+            <div class="meta">
+              <span class="badge cat">${escapeHTML(t.category||'Other')}</span>
+              ${badgeForStatus(t.status)}
+              <span class="badge">priority ${escapeHTML(t.priority||'P3')}</span>
+              ${t.checksum?`<span class="badge">proof: ${escapeHTML(short(t.checksum))}</span>`:''}
+            </div>
+          </div>
+          <div class="muted">${t.updated?fmtTime(t.updated):fmtTime(t.created)}</div>
+        </div>
+        ${links?`<div style="margin:8px 0">${links}</div>`:''}
+        ${t.notes?`<div class="muted" style="white-space:pre-wrap">${escapeHTML(t.notes)}</div>`:''}
+        <div class="actions">
+          <button class="btn" data-act="edit">Edit</button>
+          <button class="btn bad" data-act="delete">Delete</button>
+          <button class="btn" data-act="bump">Bump</button>
+          <button class="btn" data-act="clone">Clone</button>
+        </div>
+      </article>`;
+    }).join("");
+
+    const total = tasks.length;
+    const done  = tasks.filter(t=>t.status==="done").length;
+    const inprog= tasks.filter(t=>t.status==="inprogress").length;
+    const blocked=tasks.filter(t=>t.status==="blocked").length;
+    statsEl.textContent = `${done}/${total} done • ${inprog} in-progress • ${blocked} blocked`;
+    stampEl.textContent = `Saved locally (${new Date().toLocaleTimeString()})`;
+  }
+
+  function short(s){ return s.length>16 ? s.slice(0,8)+"…"+s.slice(-6) : s; }
+  function escapeHTML(s){ return String(s).replace(/[&<>"']/g, m=>({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[m])); }
+
+  // --- Seed default targets (the networks you listed + recommended mirrors) ---
+  const SEED = [
+    // Decentralized / blockchain-anchored
+    ["IPFS (pin, multi-gateway)","Decentralized / Blockchain-Anchored","todo","P1",["ipfs://<CID>","https://ipfs.io/ipfs/<CID>","https://dweb.link/ipfs/<CID>"],"Primary content‐addressed mirror. Pin via multiple gateways; consider cluster or Crust Network staking.","<CID>"],
+    ["Arweave (TX + ArDrive)","Decentralized / Blockchain-Anchored","todo","P1",["https://arweave.net/<TX>","ardrive://<DriveId>"],"Permanent ledger; bundle via ArDrive; store manifest with TX id references.","<TX>"],
+    ["Filecoin (deals)","Decentralized / Blockchain-Anchored","todo","P2",[], "Create storage deals; include retrieval providers list.",""],
+    ["Crust Network (IPFS compatible)","Decentralized / Blockchain-Anchored","todo","P2",[], "Stake for replicated pinning of your IPFS CIDs.",""],
+    ["Sia / Skynet","Decentralized / Blockchain-Anchored","todo","P3",[], "Decentralized object storage; record skylinks in manifest.",""],
+    ["Storj","Decentralized / Blockchain-Anchored","todo","P3",[], "Decentralized cloud w/ encryption; good for big binaries.",""],
+
+    // Traditional archives
+    ["Internet Archive (Wayback)","Traditional Archives","todo","P1",["https://web.archive.org/save/planetaryrestorationarchive.com"],"Submit canonical URLs; include hash table page for IA to crawl.",""],
+    ["Zenodo (DOI)","Traditional Archives","todo","P2",[], "Publish frozen snapshot; mint DOI for citability.",""],
+    ["Figshare","Traditional Archives","todo","P3",[], "Alt public dataset host; include README + checksums.",""],
+    ["OSF (Open Science Framework)","Traditional Archives","todo","P3",[], "Bundle project metadata, contributors, and versioned files.",""],
+    ["Archive.today / Ghostarchive","Traditional Archives","todo","P4",[], "Freeze public landing pages for proof-of-presence.",""],
+
+    // Peer-to-peer
+    ["BitTorrent (DHT + web seeds)","Peer-to-Peer","todo","P1",["magnet:?xt=urn:btih:<HASH>"],"Publish magnet; add web seeds pointing to IPFS gateways + GitHub releases.","<HASH>"],
+    ["I2P (eepsite / torrents)","Peer-to-Peer","todo","P2",[], "Private P2P; host eepsite with mirrors + magnet links.",""],
+    ["Freenet / Retroshare","Peer-to-Peer","todo","P4",[], "Privacy-focused redundancy among trusted peers.",""],
+
+    // Federated / mirrored repos
+    ["GitHub (source + releases)","Federated / Mirrored Repos","todo","P1",["https://github.com/TheRickyFoster"],"Primary code mirror; include Releases with .zip + checksums.",""],
+    ["GitLab mirror","Federated / Mirrored Repos","todo","P2",[], "Push mirror; enable LFS if needed.",""],
+    ["Codeberg mirror","Federated / Mirrored Repos","todo","P2",[], "Lightweight Gitea-based mirror; good for durability.",""],
+    ["SourceHut / NotABug","Federated / Mirrored Repos","todo","P3",[], "Additional git redundancy.",""],
+    ["Radicle (p2p git)","Federated / Mirrored Repos","todo","P3",[], "Decentralized git IDs; publish rad: URNs in manifest.",""],
+
+    // Long-term off-grid
+    ["M-DISC / Cold storage","Long-term Off-Grid","todo","P2",[], "Burn snapshot with checksums + manifest; store multiple geos.",""],
+    ["Sneakernet seed nodes (Raspberry Pi)","Long-term Off-Grid","todo","P2",[], "Run IPFS + torrent seeding in libraries/maker spaces.",""],
+
+    // Other bandwidth mirrors already mentioned by you
+    ["Mega.nz (file mirror)","Other","todo","P3",[], "High-bandwidth mirror for public downloads; publish hash list.",""],
+  ].map(([name,category,status,priority,links,notes,checksum])=>({
+    name, category, status, priority, links, notes, checksum,
+    created: Date.now(), updated: Date.now()
+  }));
+
+  // --- Event wiring ---
+  document.addEventListener("click", async (e)=>{
+    // filter pills
+    const pill = e.target.closest("[data-pill]");
+    if(pill){
+      const tag = pill.getAttribute("data-pill");
+      if(tag.startsWith("status:")) filter.status = tag.split(":")[1];
+      if(tag.startsWith("cat:"))    filter.category = tag.split(":")[1];
+      await render();
+      return;
+    }
+
+    // list item actions
+    const card = e.target.closest(".card");
+    if(card){
+      const id = Number(card.getAttribute("data-id"));
+      if(e.target.matches(".toggle")){
+        const [t] = (await allTasks()).filter(x=>x.id===id);
+        if(t){ t.status = e.target.checked ? "done" : "todo"; t.updated = Date.now(); await putTask(t); await render(); }
+        return;
+      }
+      const act = e.target.getAttribute("data-act");
+      if(act==="delete"){
+        await delTask(id); await render(); return;
+      }
+      if(act==="bump"){
+        const [t] = (await allTasks()).filter(x=>x.id===id);
+        if(t){ t.updated = Date.now(); await putTask(t); await render(); }
+        return;
+      }
+      if(act==="clone"){
+        const [t] = (await allTasks()).filter(x=>x.id===id);
+        if(t){ const copy = {...t}; delete copy.id; copy.name += " (copy)"; copy.created=Date.now(); copy.updated=Date.now(); await addTask(copy); await render(); }
+        return;
+      }
+      if(act==="edit"){
+        const [t] = (await allTasks()).filter(x=>x.id===id);
+        if(!t) return;
+        // simple inline edit via prompts (keeps file self-contained)
+        const name = prompt("Name:", t.name??"");
+        if(name===null) return;
+        const category = prompt("Category:", t.category??"");
+        if(category===null) return;
+        const status = prompt("Status (todo|inprogress|done|blocked):", t.status??"todo");
+        if(status===null) return;
+        const priority = prompt("Priority (P1..P4):", t.priority??"P3");
+        if(priority===null) return;
+        const links = prompt("Links (comma-separated):", (t.links||[]).join(", "));
+        if(links===null) return;
+        const checksum = prompt("Checksum/Proof:", t.checksum??"");
+        if(checksum===null) return;
+        const notes = prompt("Notes:", t.notes??"");
+        if(notes===null) return;
+
+        Object.assign(t,{
+          name: name.trim(),
+          category: category.trim(),
+          status: status.trim(),
+          priority: priority.trim(),
+          links: links.split(",").map(s=>s.trim()).filter(Boolean),
+          checksum: checksum.trim(),
+          notes: notes,
+          updated: Date.now()
+        });
+        await putTask(t); await render();
+        return;
+      }
+    }
+
+    // filter clear
+    if(e.target.id==="clearFilters"){
+      filter = { status:"ALL", category:"ALL", q:"" };
+      await render(); return;
+    }
+
+    // top buttons
+    if(e.target.id==="addBtn"){
+      const task = readForm();
+      if(!task.name){ alert("Please provide a name."); return; }
+      task.created = Date.now(); task.updated = Date.now();
+      await addTask(task); clearFormFields(); await render(); return;
+    }
+    if(e.target.id==="clearForm"){ clearFormFields(); return; }
+    if(e.target.id==="exportBtn"){ doExport(); return; }
+    if(e.target.id==="seedBtn"){ await seedDefaults(); return; }
+    if(e.target.id==="wipeBtn"){
+      if(confirm("Erase all tasks stored locally? This cannot be undone.")){
+        const req = indexedDB.deleteDatabase(DB_NAME);
+        req.onsuccess = ()=> location.reload();
+        req.onerror = ()=> alert("Failed to wipe database.");
+      }
+      return;
+    }
+  });
+
+  document.addEventListener("input", async (e)=>{
+    if(e.target.id==="search"){
+      filter.q = e.target.value;
+      await render();
+    }
+  });
+
+  document.addEventListener("keydown", (e)=>{
+    if(e.key==="e"){ e.preventDefault(); doExport(); }
+    if(e.key==="i"){ e.preventDefault(); document.getElementById("importFile").click(); }
+    if(e.key==="/"){ e.preventDefault(); const s=document.getElementById("search"); s?.focus(); s?.select(); }
+    if(e.key==="s"){ e.preventDefault(); seedDefaults(); }
+  });
+
+  document.getElementById("importFile").addEventListener("change", async (e)=>{
+    const file = e.target.files?.[0];
+    if(!file) return;
+    const txt = await file.text();
+    try{
+      const data = JSON.parse(txt);
+      if(!Array.isArray(data)) throw new Error("Invalid JSON array.");
+      for(const t of data){
+        const clean = sanitizeTask(t);
+        if(clean.id) delete clean.id;
+        clean.created = clean.created || Date.now();
+        clean.updated = Date.now();
+        await addTask(clean);
+      }
+      await render();
+    }catch(err){
+      alert("Import failed: " + err.message);
+    }finally{
+      e.target.value = "";
+    }
+  });
+
+  function readForm(){
+    const name = document.getElementById("name").value.trim();
+    const category = document.getElementById("category").value;
+    const status = document.getElementById("status").value;
+    const priority = document.getElementById("priority").value;
+    const links = document.getElementById("links").value.split(",").map(s=>s.trim()).filter(Boolean);
+    const checksum = document.getElementById("checksum").value.trim();
+    const notes = document.getElementById("notes").value;
+    return { name, category, status, priority, links, checksum, notes };
+  }
+
+  function clearFormFields(){
+    for(const id of ["name","links","checksum","notes"]) document.getElementById(id).value = "";
+    document.getElementById("category").value="Decentralized / Blockchain-Anchored";
+    document.getElementById("status").value="todo";
+    document.getElementById("priority").value="P3";
+  }
+
+  function sanitizeTask(t){
+    return {
+      name: String(t.name||"").slice(0,300),
+      category: String(t.category||"Other").slice(0,120),
+      status: ["todo","inprogress","done","blocked"].includes(t.status)?t.status:"todo",
+      priority: ["P1","P2","P3","P4"].includes(t.priority)?t.priority:"P3",
+      links: Array.isArray(t.links)? t.links.map(x=>String(x)).slice(0,12) : [],
+      checksum: String(t.checksum||"").slice(0,256),
+      notes: String(t.notes||"").slice(0,5000),
+      created: Number(t.created||Date.now()),
+      updated: Number(t.updated||Date.now()),
+      id: t.id
+    };
+  }
+
+  async function seedDefaults(){
+    // Only add if DB empty or user confirms
+    const existing = await allTasks();
+    if(existing.length && !confirm("Append default PRA targets to your current list?")) return;
+    for(const t of SEED){ await addTask(t); }
+    await render();
+  }
+
+  function doExport(){
+    allTasks().then(tasks=>{
+      const blob = new Blob([JSON.stringify(tasks, null, 2)], {type:"application/json"});
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `pra_mirror_tasks_${new Date().toISOString().replace(/[:.]/g,'-')}.json`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+    });
+  }
+
+  // boot
+  (async function init(){
+    db = await openDB();
+    await render();
+  })();
+  </script>
+</body>
+</html>
